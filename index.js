@@ -310,7 +310,7 @@ async function getRobloxUserData(cookie) {
 // Handle the bypass command
 async function handleBypassCommand(interaction) {
     // Defer the reply to give us more time to process
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ ephemeral: false });
     
     // Check if user has required role
     const requiredRoleId = bypassRoles.get(interaction.guildId);
