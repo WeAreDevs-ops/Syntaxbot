@@ -173,6 +173,17 @@ client.on('messageCreate', async message => {
     // Ignore bot messages
     if (message.author.bot) return;
     
+    // Handle !check and !domain commands FIRST before any deletion checks
+    if (message.content.toLowerCase() === '!check') {
+        await handleCheckWebsitesCommand(message);
+        return;
+    }
+    
+    if (message.content.toLowerCase() === '!domain') {
+        await handleCheckDomainsCommand(message);
+        return;
+    }
+    
     // Check if this channel is set as command-only
     const guildCommandOnlyChannels = commandOnlyChannels.get(message.guildId);
     if (guildCommandOnlyChannels && guildCommandOnlyChannels.has(message.channelId)) {
@@ -195,17 +206,6 @@ client.on('messageCreate', async message => {
     const isAdmin = member.permissions.has('Administrator');
     
     if (isOwner || isAdmin) return; // Skip deletion for owners and admins
-    
-    // Handle !check and !domain commands
-    if (message.content.toLowerCase() === '!check') {
-        await handleCheckWebsitesCommand(message);
-        return;
-    }
-    
-    if (message.content.toLowerCase() === '!domain') {
-        await handleCheckDomainsCommand(message);
-        return;
-    }
     
     // Check if message contains links
     const linkRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|\b[a-zA-Z0-9-]+\.[a-zA-Z]{2,}\b)/gi;
