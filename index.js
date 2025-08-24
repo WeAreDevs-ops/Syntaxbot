@@ -907,7 +907,7 @@ async function handleListWebsiteCommand(interaction) {
             iconURL: interaction.user.displayAvatarURL() 
         });
     
-    await interaction.reply({ embeds: [embed] });
+    await interaction.reply({ embeds: [embed], ephemeral: true });
 }
 
 // Function to extract hostname from URL
@@ -967,7 +967,7 @@ async function handleListDomainCommand(interaction) {
             iconURL: interaction.user.displayAvatarURL() 
         });
     
-    await interaction.reply({ embeds: [embed] });
+    await interaction.reply({ embeds: [embed], ephemeral: true });
 }
 
 // Handle !check command for websites
@@ -1023,9 +1023,6 @@ async function handleCheckWebsitesCommand(message) {
     }
     
     resultsEmbed.setDescription(websiteList || 'No results');
-    resultsEmbed.addFields(
-        { name: 'Checked at', value: `Today at ${new Date().toLocaleTimeString()}`, inline: false }
-    );
     
     await sentMessage.edit({ embeds: [resultsEmbed] });
 }
@@ -1082,9 +1079,6 @@ async function handleCheckDomainsCommand(message) {
     }
     
     resultsEmbed.setDescription(domainList || 'No results');
-    resultsEmbed.addFields(
-        { name: 'Checked at', value: `Today at ${new Date().toLocaleTimeString()}`, inline: false }
-    );
     
     await sentMessage.edit({ embeds: [resultsEmbed] });
 }
