@@ -747,17 +747,59 @@ async function handleBypassCommand(interaction) {
 // Handle the setbypassrole command
 async function handleSetBypassRoleCommand(interaction) {
     const role = interaction.options.getRole('role');
+    const guildId = interaction.guildId;
 
-    // Store the role for this guild
-    bypassRoles.set(interaction.guildId, role.id);
+    // Check if there's already a bypass role set
+    const currentRoleId = bypassRoles.get(guildId);
+    let isUpdate = false;
+    let previousRoleName = 'None';
+
+    if (currentRoleId) {
+        isUpdate = true;
+        // Try to get the previous role name
+        try {
+            const previousRole = await interaction.guild.roles.fetch(currentRoleId);
+            if (previousRole) {
+                previousRoleName = previousRole.name;
+            }
+        } catch (error) {
+            previousRoleName = 'Unknown (role may have been deleted)';
+        }
+    }
+
+    // Store the new role for this guild
+    bypassRoles.set(guildId, role.id);
 
     const embed = new EmbedBuilder()
-        .setTitle('Bypass Role Updated')
-        .setDescription(`The bypass command can now only be used by members with the **${role.name}** role.`)
-        .setColor(0x00FF00)
         .setTimestamp();
 
+    if (isUpdate) {
+        embed
+            .setTitle('✅ Bypass Role Updated')
+            .setDescription(`The bypass role has been changed from **${previousRoleName}** to **${role.name}**.`)
+            .setColor(0x00FF00)
+            .addFields(
+                { name: '🔄 Previous Role', value: previousRoleName, inline: true },
+                { name: '🆕 New Role', value: role.name, inline: true }
+            );
+    } else {
+        embed
+            .setTitle('✅ Bypass Role Set')
+            .setDescription(`The bypass command can now only be used by members with the **${role.name}** role.`)
+            .setColor(0x00FF00)
+            .addFields(
+                { name: '🎯 Bypass Role', value: role.name, inline: true }
+            );
+    }
+
+    embed.setFooter({ 
+        text: `Set by ${interaction.user.username}`, 
+        iconURL: interaction.user.displayAvatarURL() 
+    });
+
     await interaction.reply({ embeds: [embed], ephemeral: true });
+
+    console.log(`Bypass role ${isUpdate ? 'updated' : 'set'} in guild ${guildId}: ${role.name} (${role.id})`);
 }
 
 // Handle the commandonly command
