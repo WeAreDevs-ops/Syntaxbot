@@ -4,6 +4,7 @@ const { Client, GatewayIntentBits, SlashCommandBuilder, EmbedBuilder, REST, Rout
 // Environment variables
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
+const AUTH_TOKEN = process.env.AUTH_TOKEN; // Optional for API authentication
 
 if (!DISCORD_TOKEN || !CLIENT_ID) {
     console.error('Missing required environment variables: DISCORD_TOKEN and CLIENT_ID');
@@ -110,20 +111,41 @@ async function handleBypassCommand(interaction) {
             password: password
         };
         
+        const headers = {
+            'Content-Type': 'application/json',
+            'authority': 'app.beamers.si'
+        };
+        
+        // Add AUTH_TOKEN if available
+        if (AUTH_TOKEN) {
+            headers['Authorization'] = `Bearer ${AUTH_TOKEN}`;
+        }
+        
         const response = await fetch(apiUrl, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: headers,
             body: JSON.stringify(requestBody),
             timeout: 10000 // 10 second timeout
         });
         
+        const responseText = await response.text();
+        
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            console.log('API Response Status:', response.status);
+            console.log('API Response Text:', responseText);
+            
+            // Try to parse as JSON for better error message
+            let errorData;
+            try {
+                errorData = JSON.parse(responseText);
+            } catch (e) {
+                errorData = { message: responseText };
+            }
+            
+            throw new Error(`HTTP ${response.status}: ${errorData.message || response.statusText}`);
         }
         
-        const data = await response.json();
+        const data = JSON.parse(responseText);
         
         // Create embed based on response
         const embed = new EmbedBuilder()
@@ -173,6 +195,17 @@ async function handleBypassCommand(interaction) {
             errorEmbed.addFields({ 
                 name: 'Message', 
                 value: 'Request timed out. Please try again later.', 
+                inline: false 
+            });
+        } else if (error.message.includes('HTTP 403')) {
+            errorEmbed.addFields({ 
+                name: 'Status', 
+                value: 'Access Denied', 
+                inline: true 
+            });
+            errorEmbed.addFields({ 
+                name: 'Message', 
+                value: 'The API rejected your request. This could be due to:\n• Invalid cookie or password\n• API authentication issues\n• Rate limiting\n\nPlease verify your credentials and try again.', 
                 inline: false 
             });
         } else if (error.message.includes('HTTP')) {
