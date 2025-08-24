@@ -113,7 +113,20 @@ async function handleBypassCommand(interaction) {
         
         const headers = {
             'Content-Type': 'application/json',
-            'authority': 'app.beamers.si'
+            'authority': 'app.beamers.si',
+            'accept': '*/*',
+            'accept-encoding': 'gzip, deflate, br, zstd',
+            'accept-language': 'en-US,en;q=0.9',
+            'origin': 'https://app.beamers.si',
+            'referer': 'https://app.beamers.si/dashboard/bypasser',
+            'sec-ch-ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-fetch-dest': 'empty',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-site': 'same-origin',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+            'cookie': 'REFERAL_CODE=1381858883898576454; AUTH_TOKEN=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6Nkl6SXNOTHJVNHEifQ.euJgcZGjkEzODE4NTg4ODg5ODUTNjYONTONUGltJjGr0eYP; ClsjEzODE4NTg4ODg5ODUTNzY0NTRiWjipoG30eGly; GqwlD.urSm-YPjxcj2MleGJre'
         };
         
         // Add AUTH_TOKEN if available
