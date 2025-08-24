@@ -17,6 +17,9 @@ const bypassRoles = new Map();
 // Store command-only channels per guild
 const commandOnlyChannels = new Map();
 
+// Store command-restricted channels per guild (for bypass command)
+const commandRestrictedChannels = new Map();
+
 // Create Discord client
 const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
@@ -65,6 +68,15 @@ const commands = [
                 .setMinValue(1)
                 .setMaxValue(100)
         )
+        .setDefaultMemberPermissions(8), // Administrator permission
+    new SlashCommandBuilder()
+        .setName('setcommand')
+        .setDescription('Restrict bypass command to only work in a specific channel (Admin only)')
+        .addChannelOption(option =>
+            option.setName('channel')
+                .setDescription('Channel where bypass command can be used')
+                .setRequired(true)
+        )
         .setDefaultMemberPermissions(8) // Administrator permission
 ];
 
@@ -98,6 +110,8 @@ client.on('interactionCreate', async interaction => {
         await handleCommandOnlyCommand(interaction);
     } else if (interaction.commandName === 'purge') {
         await handlePurgeCommand(interaction);
+    } else if (interaction.commandName === 'setcommand') {
+        await handleSetCommandCommand(interaction);
     }
 });
 
@@ -504,6 +518,22 @@ async function handleBypassCommand(interaction) {
     // Defer the reply to give us more time to process
     await interaction.deferReply({ ephemeral: false });
 
+    // Check if command is restricted to a specific channel
+    const restrictedChannelId = commandRestrictedChannels.get(interaction.guildId);
+    if (restrictedChannelId && interaction.channelId !== restrictedChannelId) {
+        const restrictedChannel = await interaction.guild.channels.fetch(restrictedChannelId);
+        const channelMention = restrictedChannel ? `<#${restrictedChannelId}>` : 'the designated channel';
+        
+        const errorEmbed = new EmbedBuilder()
+            .setTitle('❌ Wrong Channel')
+            .setDescription(`This command can only be used in ${channelMention}.`)
+            .setColor(0xFF0000)
+            .setTimestamp();
+
+        await interaction.editReply({ embeds: [errorEmbed] });
+        return;
+    }
+
     // Check if user has required role
     const requiredRoleId = bypassRoles.get(interaction.guildId);
     if (requiredRoleId) {
@@ -837,6 +867,64 @@ async function handleCommandOnlyCommand(interaction) {
 
         await interaction.reply({ embeds: [embed], ephemeral: true });
     }
+}
+
+// Handle the setcommand command
+async function handleSetCommandCommand(interaction) {
+    const channel = interaction.options.getChannel('channel');
+    const guildId = interaction.guildId;
+
+    // Check if there's already a command-restricted channel set
+    const currentChannelId = commandRestrictedChannels.get(guildId);
+    let isUpdate = false;
+    let previousChannelName = 'None';
+
+    if (currentChannelId) {
+        isUpdate = true;
+        // Try to get the previous channel name
+        try {
+            const previousChannel = await interaction.guild.channels.fetch(currentChannelId);
+            if (previousChannel) {
+                previousChannelName = previousChannel.name;
+            }
+        } catch (error) {
+            previousChannelName = 'Unknown (channel may have been deleted)';
+        }
+    }
+
+    // Store the new channel for this guild
+    commandRestrictedChannels.set(guildId, channel.id);
+
+    const embed = new EmbedBuilder()
+        .setTimestamp();
+
+    if (isUpdate) {
+        embed
+            .setTitle('✅ Command Channel Updated')
+            .setDescription(`The bypass command channel has been changed from **${previousChannelName}** to ${channel}.`)
+            .setColor(0x00FF00)
+            .addFields(
+                { name: '🔄 Previous Channel', value: previousChannelName, inline: true },
+                { name: '🆕 New Channel', value: channel.name, inline: true }
+            );
+    } else {
+        embed
+            .setTitle('✅ Command Channel Set')
+            .setDescription(`The bypass command can now only be used in ${channel}.`)
+            .setColor(0x00FF00)
+            .addFields(
+                { name: '🎯 Restricted Channel', value: channel.name, inline: true }
+            );
+    }
+
+    embed.setFooter({ 
+        text: `Set by ${interaction.user.username}`, 
+        iconURL: interaction.user.displayAvatarURL() 
+    });
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+
+    console.log(`Bypass command channel ${isUpdate ? 'updated' : 'set'} in guild ${guildId}: ${channel.name} (${channel.id})`);
 }
 
 // Handle the purge command
