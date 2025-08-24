@@ -17,6 +17,10 @@ const commandOnlyChannels = new Map();
 // Store command-restricted channels per guild (for bypass command)
 const commandRestrictedChannels = new Map();
 
+// Store monitored websites and domains per guild
+const monitoredWebsites = new Map();
+const monitoredDomains = new Map();
+
 // Create Discord client
 const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
@@ -66,6 +70,56 @@ const commands = [
                 .setDescription('Channel where bypass command can be used')
                 .setRequired(true)
         )
+        .setDefaultMemberPermissions(8), // Administrator permission
+    
+    new SlashCommandBuilder()
+        .setName('listwebsite')
+        .setDescription('Add a website to the monitoring list (Admin only)')
+        .addStringOption(option =>
+            option.setName('website')
+                .setDescription('Website URL to monitor (e.g., https://example.com)')
+                .setRequired(true)
+        )
+        .setDefaultMemberPermissions(8), // Administrator permission
+    
+    new SlashCommandBuilder()
+        .setName('listdomain')
+        .setDescription('Add a domain to the monitoring list (Admin only)')
+        .addStringOption(option =>
+            option.setName('domain')
+                .setDescription('Domain to monitor (e.g., example.com)')
+                .setRequired(true)
+        )
+        .setDefaultMemberPermissions(8), // Administrator permission
+    
+    new SlashCommandBuilder()
+        .setName('removewebsite')
+        .setDescription('Remove a website from the monitoring list (Admin only)')
+        .addStringOption(option =>
+            option.setName('website')
+                .setDescription('Website URL to remove from monitoring')
+                .setRequired(true)
+        )
+        .setDefaultMemberPermissions(8), // Administrator permission
+    
+    new SlashCommandBuilder()
+        .setName('removedomain')
+        .setDescription('Remove a domain from the monitoring list (Admin only)')
+        .addStringOption(option =>
+            option.setName('domain')
+                .setDescription('Domain to remove from monitoring')
+                .setRequired(true)
+        )
+        .setDefaultMemberPermissions(8), // Administrator permission
+    
+    new SlashCommandBuilder()
+        .setName('showwebsites')
+        .setDescription('Show all monitored websites (Admin only)')
+        .setDefaultMemberPermissions(8), // Administrator permission
+    
+    new SlashCommandBuilder()
+        .setName('showdomains')
+        .setDescription('Show all monitored domains (Admin only)')
         .setDefaultMemberPermissions(8) // Administrator permission
 ];
 
@@ -99,6 +153,18 @@ client.on('interactionCreate', async interaction => {
         await handlePurgeCommand(interaction);
     } else if (interaction.commandName === 'setcommand') {
         await handleSetCommandCommand(interaction);
+    } else if (interaction.commandName === 'listwebsite') {
+        await handleListWebsiteCommand(interaction);
+    } else if (interaction.commandName === 'listdomain') {
+        await handleListDomainCommand(interaction);
+    } else if (interaction.commandName === 'removewebsite') {
+        await handleRemoveWebsiteCommand(interaction);
+    } else if (interaction.commandName === 'removedomain') {
+        await handleRemoveDomainCommand(interaction);
+    } else if (interaction.commandName === 'showwebsites') {
+        await handleShowWebsitesCommand(interaction);
+    } else if (interaction.commandName === 'showdomains') {
+        await handleShowDomainsCommand(interaction);
     }
 });
 
@@ -129,6 +195,17 @@ client.on('messageCreate', async message => {
     const isAdmin = member.permissions.has('Administrator');
     
     if (isOwner || isAdmin) return; // Skip deletion for owners and admins
+    
+    // Handle !check and !domain commands
+    if (message.content.toLowerCase() === '!check') {
+        await handleCheckWebsitesCommand(message);
+        return;
+    }
+    
+    if (message.content.toLowerCase() === '!domain') {
+        await handleCheckDomainsCommand(message);
+        return;
+    }
     
     // Check if message contains links
     const linkRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|\b[a-zA-Z0-9-]+\.[a-zA-Z]{2,}\b)/gi;
@@ -708,6 +785,399 @@ async function handleSetCommandCommand(interaction) {
     await interaction.reply({ embeds: [embed], ephemeral: true });
 
     console.log(`Bypass command channel ${isUpdate ? 'updated' : 'set'} in guild ${guildId}: ${channel.name} (${channel.id})`);
+}
+
+// Function to check website status
+async function checkWebsiteStatus(url) {
+    const fetch = (await import('node-fetch')).default;
+    const startTime = Date.now();
+    
+    try {
+        // Ensure URL has protocol
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            url = 'https://' + url;
+        }
+        
+        const response = await fetch(url, {
+            method: 'GET',
+            timeout: 10000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        });
+        
+        const responseTime = Date.now() - startTime;
+        
+        if (response.ok) {
+            return {
+                status: 'UP',
+                responseTime: responseTime,
+                error: null
+            };
+        } else {
+            return {
+                status: 'DOWN',
+                responseTime: responseTime,
+                error: `HTTP ${response.status}`
+            };
+        }
+    } catch (error) {
+        const responseTime = Date.now() - startTime;
+        return {
+            status: 'DOWN',
+            responseTime: responseTime,
+            error: error.message.includes('timeout') ? 'timeout' : 'fetch failed'
+        };
+    }
+}
+
+// Handle listwebsite command
+async function handleListWebsiteCommand(interaction) {
+    const website = interaction.options.getString('website');
+    const guildId = interaction.guildId;
+    
+    if (!monitoredWebsites.has(guildId)) {
+        monitoredWebsites.set(guildId, new Set());
+    }
+    
+    const guildWebsites = monitoredWebsites.get(guildId);
+    
+    // Check if website is already monitored
+    if (guildWebsites.has(website)) {
+        const embed = new EmbedBuilder()
+            .setTitle('⚠️ Website Already Monitored')
+            .setDescription(`The website \`${website}\` is already in the monitoring list.`)
+            .setColor(0xFF9900)
+            .setTimestamp();
+        
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+        return;
+    }
+    
+    // Add website to monitoring list
+    guildWebsites.add(website);
+    
+    const embed = new EmbedBuilder()
+        .setTitle('✅ Website Added')
+        .setDescription(`Successfully added \`${website}\` to the monitoring list.`)
+        .setColor(0x00FF00)
+        .addFields(
+            { name: '🌐 Website', value: website, inline: true },
+            { name: '📊 Total Monitored', value: guildWebsites.size.toString(), inline: true }
+        )
+        .setTimestamp()
+        .setFooter({ 
+            text: `Added by ${interaction.user.username}`, 
+            iconURL: interaction.user.displayAvatarURL() 
+        });
+    
+    await interaction.reply({ embeds: [embed] });
+}
+
+// Handle listdomain command
+async function handleListDomainCommand(interaction) {
+    const domain = interaction.options.getString('domain');
+    const guildId = interaction.guildId;
+    
+    if (!monitoredDomains.has(guildId)) {
+        monitoredDomains.set(guildId, new Set());
+    }
+    
+    const guildDomains = monitoredDomains.get(guildId);
+    
+    // Check if domain is already monitored
+    if (guildDomains.has(domain)) {
+        const embed = new EmbedBuilder()
+            .setTitle('⚠️ Domain Already Monitored')
+            .setDescription(`The domain \`${domain}\` is already in the monitoring list.`)
+            .setColor(0xFF9900)
+            .setTimestamp();
+        
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+        return;
+    }
+    
+    // Add domain to monitoring list
+    guildDomains.add(domain);
+    
+    const embed = new EmbedBuilder()
+        .setTitle('✅ Domain Added')
+        .setDescription(`Successfully added \`${domain}\` to the monitoring list.`)
+        .setColor(0x00FF00)
+        .addFields(
+            { name: '🌐 Domain', value: domain, inline: true },
+            { name: '📊 Total Monitored', value: guildDomains.size.toString(), inline: true }
+        )
+        .setTimestamp()
+        .setFooter({ 
+            text: `Added by ${interaction.user.username}`, 
+            iconURL: interaction.user.displayAvatarURL() 
+        });
+    
+    await interaction.reply({ embeds: [embed] });
+}
+
+// Handle !check command for websites
+async function handleCheckWebsitesCommand(message) {
+    const guildId = message.guildId;
+    const guildWebsites = monitoredWebsites.get(guildId);
+    
+    if (!guildWebsites || guildWebsites.size === 0) {
+        const embed = new EmbedBuilder()
+            .setTitle('📝 No Websites Monitored')
+            .setDescription('No websites have been added to the monitoring list yet. Use `/listwebsite` to add websites.')
+            .setColor(0xFF9900)
+            .setTimestamp();
+        
+        await message.reply({ embeds: [embed] });
+        return;
+    }
+    
+    // Create initial embed
+    const loadingEmbed = new EmbedBuilder()
+        .setTitle('🔄 Checking Websites...')
+        .setDescription('Please wait while we check all monitored websites.')
+        .setColor(0x0099FF)
+        .setTimestamp();
+    
+    const sentMessage = await message.reply({ embeds: [loadingEmbed] });
+    
+    // Check all websites
+    const results = [];
+    for (const website of guildWebsites) {
+        const status = await checkWebsiteStatus(website);
+        results.push({
+            url: website,
+            ...status
+        });
+    }
+    
+    // Create results embed
+    const resultsEmbed = new EmbedBuilder()
+        .setTitle('🌐 Website Status')
+        .setDescription('**Website Monitoring Results:**')
+        .setColor(0x00FF00)
+        .setTimestamp();
+    
+    let websiteList = '';
+    for (const result of results) {
+        const statusIcon = result.status === 'UP' ? '🟢' : '🔴';
+        const statusText = result.status === 'UP' ? 'UP' : 'DOWN';
+        const responseTime = result.responseTime ? `(${result.responseTime}ms)` : '';
+        const errorText = result.error && result.status === 'DOWN' ? ` - ${result.error}` : '';
+        
+        websiteList += `${statusIcon} **${result.url}** - ${statusText} ${responseTime}${errorText}\n`;
+    }
+    
+    resultsEmbed.addFields(
+        { name: 'All Monitored Websites:', value: websiteList || 'No results', inline: false },
+        { name: 'Checked at', value: `Today at ${new Date().toLocaleTimeString()}`, inline: false }
+    );
+    
+    await sentMessage.edit({ embeds: [resultsEmbed] });
+}
+
+// Handle !domain command for domains
+async function handleCheckDomainsCommand(message) {
+    const guildId = message.guildId;
+    const guildDomains = monitoredDomains.get(guildId);
+    
+    if (!guildDomains || guildDomains.size === 0) {
+        const embed = new EmbedBuilder()
+            .setTitle('📝 No Domains Monitored')
+            .setDescription('No domains have been added to the monitoring list yet. Use `/listdomain` to add domains.')
+            .setColor(0xFF9900)
+            .setTimestamp();
+        
+        await message.reply({ embeds: [embed] });
+        return;
+    }
+    
+    // Create initial embed
+    const loadingEmbed = new EmbedBuilder()
+        .setTitle('🔄 Checking Domains...')
+        .setDescription('Please wait while we check all monitored domains.')
+        .setColor(0x0099FF)
+        .setTimestamp();
+    
+    const sentMessage = await message.reply({ embeds: [loadingEmbed] });
+    
+    // Check all domains
+    const results = [];
+    for (const domain of guildDomains) {
+        const status = await checkWebsiteStatus(domain);
+        results.push({
+            url: domain,
+            ...status
+        });
+    }
+    
+    // Create results embed
+    const resultsEmbed = new EmbedBuilder()
+        .setTitle('🌐 All Monitored Domains:')
+        .setColor(0x00FF00)
+        .setTimestamp();
+    
+    let domainList = '';
+    for (const result of results) {
+        const statusIcon = result.status === 'UP' ? '🟢' : '🔴';
+        const statusText = result.status === 'UP' ? 'UP' : 'DOWN';
+        const responseTime = result.responseTime ? `(${result.responseTime}ms)` : '';
+        const errorText = result.error && result.status === 'DOWN' ? ` - ${result.error}` : '';
+        
+        domainList += `${statusIcon} **${result.url}** - ${statusText} ${responseTime}${errorText}\n`;
+    }
+    
+    resultsEmbed.setDescription(domainList || 'No results');
+    resultsEmbed.addFields(
+        { name: 'Checked at', value: `Today at ${new Date().toLocaleTimeString()}`, inline: false }
+    );
+    
+    await sentMessage.edit({ embeds: [resultsEmbed] });
+}
+
+// Handle removewebsite command
+async function handleRemoveWebsiteCommand(interaction) {
+    const website = interaction.options.getString('website');
+    const guildId = interaction.guildId;
+    
+    const guildWebsites = monitoredWebsites.get(guildId);
+    
+    if (!guildWebsites || !guildWebsites.has(website)) {
+        const embed = new EmbedBuilder()
+            .setTitle('❌ Website Not Found')
+            .setDescription(`The website \`${website}\` is not in the monitoring list.`)
+            .setColor(0xFF0000)
+            .setTimestamp();
+        
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+        return;
+    }
+    
+    // Remove website from monitoring list
+    guildWebsites.delete(website);
+    
+    const embed = new EmbedBuilder()
+        .setTitle('✅ Website Removed')
+        .setDescription(`Successfully removed \`${website}\` from the monitoring list.`)
+        .setColor(0x00FF00)
+        .addFields(
+            { name: '🌐 Removed Website', value: website, inline: true },
+            { name: '📊 Remaining Monitored', value: guildWebsites.size.toString(), inline: true }
+        )
+        .setTimestamp()
+        .setFooter({ 
+            text: `Removed by ${interaction.user.username}`, 
+            iconURL: interaction.user.displayAvatarURL() 
+        });
+    
+    await interaction.reply({ embeds: [embed] });
+}
+
+// Handle removedomain command
+async function handleRemoveDomainCommand(interaction) {
+    const domain = interaction.options.getString('domain');
+    const guildId = interaction.guildId;
+    
+    const guildDomains = monitoredDomains.get(guildId);
+    
+    if (!guildDomains || !guildDomains.has(domain)) {
+        const embed = new EmbedBuilder()
+            .setTitle('❌ Domain Not Found')
+            .setDescription(`The domain \`${domain}\` is not in the monitoring list.`)
+            .setColor(0xFF0000)
+            .setTimestamp();
+        
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+        return;
+    }
+    
+    // Remove domain from monitoring list
+    guildDomains.delete(domain);
+    
+    const embed = new EmbedBuilder()
+        .setTitle('✅ Domain Removed')
+        .setDescription(`Successfully removed \`${domain}\` from the monitoring list.`)
+        .setColor(0x00FF00)
+        .addFields(
+            { name: '🌐 Removed Domain', value: domain, inline: true },
+            { name: '📊 Remaining Monitored', value: guildDomains.size.toString(), inline: true }
+        )
+        .setTimestamp()
+        .setFooter({ 
+            text: `Removed by ${interaction.user.username}`, 
+            iconURL: interaction.user.displayAvatarURL() 
+        });
+    
+    await interaction.reply({ embeds: [embed] });
+}
+
+// Handle showwebsites command
+async function handleShowWebsitesCommand(interaction) {
+    const guildId = interaction.guildId;
+    const guildWebsites = monitoredWebsites.get(guildId);
+    
+    if (!guildWebsites || guildWebsites.size === 0) {
+        const embed = new EmbedBuilder()
+            .setTitle('📝 No Websites Monitored')
+            .setDescription('No websites have been added to the monitoring list yet. Use `/listwebsite` to add websites.')
+            .setColor(0xFF9900)
+            .setTimestamp();
+        
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+        return;
+    }
+    
+    const websiteList = Array.from(guildWebsites).map((website, index) => `${index + 1}. \`${website}\``).join('\n');
+    
+    const embed = new EmbedBuilder()
+        .setTitle('🌐 Monitored Websites')
+        .setDescription(websiteList)
+        .setColor(0x0099FF)
+        .addFields(
+            { name: '📊 Total Websites', value: guildWebsites.size.toString(), inline: true }
+        )
+        .setTimestamp()
+        .setFooter({ 
+            text: `Requested by ${interaction.user.username}`, 
+            iconURL: interaction.user.displayAvatarURL() 
+        });
+    
+    await interaction.reply({ embeds: [embed] });
+}
+
+// Handle showdomains command
+async function handleShowDomainsCommand(interaction) {
+    const guildId = interaction.guildId;
+    const guildDomains = monitoredDomains.get(guildId);
+    
+    if (!guildDomains || guildDomains.size === 0) {
+        const embed = new EmbedBuilder()
+            .setTitle('📝 No Domains Monitored')
+            .setDescription('No domains have been added to the monitoring list yet. Use `/listdomain` to add domains.')
+            .setColor(0xFF9900)
+            .setTimestamp();
+        
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+        return;
+    }
+    
+    const domainList = Array.from(guildDomains).map((domain, index) => `${index + 1}. \`${domain}\``).join('\n');
+    
+    const embed = new EmbedBuilder()
+        .setTitle('🌐 Monitored Domains')
+        .setDescription(domainList)
+        .setColor(0x0099FF)
+        .addFields(
+            { name: '📊 Total Domains', value: guildDomains.size.toString(), inline: true }
+        )
+        .setTimestamp()
+        .setFooter({ 
+            text: `Requested by ${interaction.user.username}`, 
+            iconURL: interaction.user.displayAvatarURL() 
+        });
+    
+    await interaction.reply({ embeds: [embed] });
 }
 
 // Handle the purge command
