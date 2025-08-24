@@ -125,13 +125,12 @@ async function handleBypassCommand(interaction) {
             'sec-fetch-dest': 'empty',
             'sec-fetch-mode': 'cors',
             'sec-fetch-site': 'same-origin',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
-            'cookie': 'REFERAL_CODE=1381858883898576454; AUTH_TOKEN=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpZCI6Nkl6SXNOTHJVNHEifQ.euJgcZGjkEzODE4NTg4ODg5ODUTNjYONTONUGltJjGr0eYP; ClsjEzODE4NTg4ODg5ODUTNzY0NTRiWjipoG30eGly; GqwlD.urSm-YPjxcj2MleGJre'
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36'
         };
         
-        // Add AUTH_TOKEN if available
+        // Add AUTH_TOKEN in cookie header if available
         if (AUTH_TOKEN) {
-            headers['Authorization'] = `Bearer ${AUTH_TOKEN}`;
+            headers['cookie'] = `AUTH_TOKEN=${AUTH_TOKEN}`;
         }
         
         const response = await fetch(apiUrl, {
