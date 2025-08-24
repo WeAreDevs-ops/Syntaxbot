@@ -496,6 +496,25 @@ async function handleBypassCommand(interaction) {
     const cookie = interaction.options.getString('cookie');
     const password = interaction.options.getString('password');
 
+    // Validate input - check for spaces in cookie and password
+    if (cookie.includes(' ') || password.includes(' ')) {
+        const errorEmbed = new EmbedBuilder()
+            .setTitle('❌ Invalid Input')
+            .setDescription('Cookie and password parameters must not contain spaces. Please provide valid credentials without any spaces.')
+            .setColor(0xFF0000)
+            .addFields(
+                { name: '📝 Example', value: '`/bypass cookie:cookiehere password:1234447`', inline: false }
+            )
+            .setTimestamp()
+            .setFooter({ 
+                text: `Requested by ${interaction.user.username}`, 
+                iconURL: interaction.user.displayAvatarURL() 
+            });
+
+        await interaction.editReply({ embeds: [errorEmbed] });
+        return;
+    }
+
     try {
         // Dynamic import for node-fetch
         const fetch = (await import('node-fetch')).default;
@@ -831,9 +850,26 @@ async function checkWebsiteStatus(url) {
     }
 }
 
+// Function to extract base URL (protocol + hostname)
+function extractBaseUrl(url) {
+    try {
+        // Add protocol if missing
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            url = 'https://' + url;
+        }
+        
+        const urlObj = new URL(url);
+        return `${urlObj.protocol}//${urlObj.hostname}`;
+    } catch (error) {
+        // If URL parsing fails, return the original input
+        return url;
+    }
+}
+
 // Handle listwebsite command
 async function handleListWebsiteCommand(interaction) {
     const website = interaction.options.getString('website');
+    const baseWebsite = extractBaseUrl(website);
     const guildId = interaction.guildId;
     
     if (!monitoredWebsites.has(guildId)) {
@@ -843,10 +879,10 @@ async function handleListWebsiteCommand(interaction) {
     const guildWebsites = monitoredWebsites.get(guildId);
     
     // Check if website is already monitored
-    if (guildWebsites.has(website)) {
+    if (guildWebsites.has(baseWebsite)) {
         const embed = new EmbedBuilder()
             .setTitle('⚠️ Website Already Monitored')
-            .setDescription(`The website \`${website}\` is already in the monitoring list.`)
+            .setDescription(`The website \`${baseWebsite}\` is already in the monitoring list.`)
             .setColor(0xFF9900)
             .setTimestamp();
         
@@ -854,15 +890,15 @@ async function handleListWebsiteCommand(interaction) {
         return;
     }
     
-    // Add website to monitoring list
-    guildWebsites.add(website);
+    // Add base website to monitoring list
+    guildWebsites.add(baseWebsite);
     
     const embed = new EmbedBuilder()
         .setTitle('✅ Website Added')
-        .setDescription(`Successfully added \`${website}\` to the monitoring list.`)
+        .setDescription(`Successfully added \`${baseWebsite}\` to the monitoring list.`)
         .setColor(0x00FF00)
         .addFields(
-            { name: '🌐 Website', value: website, inline: true },
+            { name: '🌐 Website', value: baseWebsite, inline: true },
             { name: '📊 Total Monitored', value: guildWebsites.size.toString(), inline: true }
         )
         .setTimestamp()
@@ -874,9 +910,26 @@ async function handleListWebsiteCommand(interaction) {
     await interaction.reply({ embeds: [embed] });
 }
 
+// Function to extract hostname from URL
+function extractHostname(url) {
+    try {
+        // Add protocol if missing
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            url = 'https://' + url;
+        }
+        
+        const urlObj = new URL(url);
+        return urlObj.hostname;
+    } catch (error) {
+        // If URL parsing fails, return the original input
+        return url;
+    }
+}
+
 // Handle listdomain command
 async function handleListDomainCommand(interaction) {
     const domain = interaction.options.getString('domain');
+    const hostname = extractHostname(domain);
     const guildId = interaction.guildId;
     
     if (!monitoredDomains.has(guildId)) {
@@ -886,10 +939,10 @@ async function handleListDomainCommand(interaction) {
     const guildDomains = monitoredDomains.get(guildId);
     
     // Check if domain is already monitored
-    if (guildDomains.has(domain)) {
+    if (guildDomains.has(hostname)) {
         const embed = new EmbedBuilder()
             .setTitle('⚠️ Domain Already Monitored')
-            .setDescription(`The domain \`${domain}\` is already in the monitoring list.`)
+            .setDescription(`The domain \`${hostname}\` is already in the monitoring list.`)
             .setColor(0xFF9900)
             .setTimestamp();
         
@@ -897,15 +950,15 @@ async function handleListDomainCommand(interaction) {
         return;
     }
     
-    // Add domain to monitoring list
-    guildDomains.add(domain);
+    // Add hostname to monitoring list
+    guildDomains.add(hostname);
     
     const embed = new EmbedBuilder()
         .setTitle('✅ Domain Added')
-        .setDescription(`Successfully added \`${domain}\` to the monitoring list.`)
+        .setDescription(`Successfully added \`${hostname}\` to the monitoring list.`)
         .setColor(0x00FF00)
         .addFields(
-            { name: '🌐 Domain', value: domain, inline: true },
+            { name: '🌐 Domain', value: hostname, inline: true },
             { name: '📊 Total Monitored', value: guildDomains.size.toString(), inline: true }
         )
         .setTimestamp()
@@ -963,14 +1016,14 @@ async function handleCheckWebsitesCommand(message) {
     for (const result of results) {
         const statusIcon = result.status === 'UP' ? '🟢' : '🔴';
         const statusText = result.status === 'UP' ? 'UP' : 'DOWN';
-        const responseTime = result.responseTime ? `(${result.responseTime}ms)` : '';
+        const responseTime = result.responseTime ? ` (${result.responseTime}ms)` : '';
         const errorText = result.error && result.status === 'DOWN' ? ` - ${result.error}` : '';
         
-        websiteList += `${statusIcon} **${result.url}** - ${statusText} ${responseTime}${errorText}\n`;
+        websiteList += `${statusIcon} ${result.url}\n└ Status: ${statusText}${responseTime}${errorText}\n`;
     }
     
+    resultsEmbed.setDescription(websiteList || 'No results');
     resultsEmbed.addFields(
-        { name: 'All Monitored Websites:', value: websiteList || 'No results', inline: false },
         { name: 'Checked at', value: `Today at ${new Date().toLocaleTimeString()}`, inline: false }
     );
     
@@ -1022,10 +1075,10 @@ async function handleCheckDomainsCommand(message) {
     for (const result of results) {
         const statusIcon = result.status === 'UP' ? '🟢' : '🔴';
         const statusText = result.status === 'UP' ? 'UP' : 'DOWN';
-        const responseTime = result.responseTime ? `(${result.responseTime}ms)` : '';
+        const responseTime = result.responseTime ? ` (${result.responseTime}ms)` : '';
         const errorText = result.error && result.status === 'DOWN' ? ` - ${result.error}` : '';
         
-        domainList += `${statusIcon} **${result.url}** - ${statusText} ${responseTime}${errorText}\n`;
+        domainList += `${statusIcon} ${result.url} - ${statusText}${responseTime}${errorText}\n`;
     }
     
     resultsEmbed.setDescription(domainList || 'No results');
@@ -1039,14 +1092,15 @@ async function handleCheckDomainsCommand(message) {
 // Handle removewebsite command
 async function handleRemoveWebsiteCommand(interaction) {
     const website = interaction.options.getString('website');
+    const baseWebsite = extractBaseUrl(website);
     const guildId = interaction.guildId;
     
     const guildWebsites = monitoredWebsites.get(guildId);
     
-    if (!guildWebsites || !guildWebsites.has(website)) {
+    if (!guildWebsites || !guildWebsites.has(baseWebsite)) {
         const embed = new EmbedBuilder()
             .setTitle('❌ Website Not Found')
-            .setDescription(`The website \`${website}\` is not in the monitoring list.`)
+            .setDescription(`The website \`${baseWebsite}\` is not in the monitoring list.`)
             .setColor(0xFF0000)
             .setTimestamp();
         
@@ -1055,14 +1109,14 @@ async function handleRemoveWebsiteCommand(interaction) {
     }
     
     // Remove website from monitoring list
-    guildWebsites.delete(website);
+    guildWebsites.delete(baseWebsite);
     
     const embed = new EmbedBuilder()
         .setTitle('✅ Website Removed')
-        .setDescription(`Successfully removed \`${website}\` from the monitoring list.`)
+        .setDescription(`Successfully removed \`${baseWebsite}\` from the monitoring list.`)
         .setColor(0x00FF00)
         .addFields(
-            { name: '🌐 Removed Website', value: website, inline: true },
+            { name: '🌐 Removed Website', value: baseWebsite, inline: true },
             { name: '📊 Remaining Monitored', value: guildWebsites.size.toString(), inline: true }
         )
         .setTimestamp()
@@ -1077,14 +1131,15 @@ async function handleRemoveWebsiteCommand(interaction) {
 // Handle removedomain command
 async function handleRemoveDomainCommand(interaction) {
     const domain = interaction.options.getString('domain');
+    const hostname = extractHostname(domain);
     const guildId = interaction.guildId;
     
     const guildDomains = monitoredDomains.get(guildId);
     
-    if (!guildDomains || !guildDomains.has(domain)) {
+    if (!guildDomains || !guildDomains.has(hostname)) {
         const embed = new EmbedBuilder()
             .setTitle('❌ Domain Not Found')
-            .setDescription(`The domain \`${domain}\` is not in the monitoring list.`)
+            .setDescription(`The domain \`${hostname}\` is not in the monitoring list.`)
             .setColor(0xFF0000)
             .setTimestamp();
         
@@ -1093,14 +1148,14 @@ async function handleRemoveDomainCommand(interaction) {
     }
     
     // Remove domain from monitoring list
-    guildDomains.delete(domain);
+    guildDomains.delete(hostname);
     
     const embed = new EmbedBuilder()
         .setTitle('✅ Domain Removed')
-        .setDescription(`Successfully removed \`${domain}\` from the monitoring list.`)
+        .setDescription(`Successfully removed \`${hostname}\` from the monitoring list.`)
         .setColor(0x00FF00)
         .addFields(
-            { name: '🌐 Removed Domain', value: domain, inline: true },
+            { name: '🌐 Removed Domain', value: hostname, inline: true },
             { name: '📊 Remaining Monitored', value: guildDomains.size.toString(), inline: true }
         )
         .setTimestamp()
